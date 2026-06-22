@@ -1,9 +1,16 @@
 name: Build & Release (Windows)
 on:
-  workflow_dispatch:
   push:
     tags:
       - "v*.*.*"
+  
+  # 💡 手動実行（Actionsタブからボタンぽちで実行）を有効化
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: '作成・追加先のリリースタグ名 (例: v1.0.0)'
+        required: true
+        type: string
 
 jobs:
   build:
@@ -13,13 +20,12 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v3
 
-      # WindowsでのQt環境構築は、公式のセットアップアクションを使用するのが最も確実です
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
         with:
           version: '6.5.0'
-          modules: 'qtmultimedia' # 必要なモジュールを追加
-      # libsndfile などのその他の依存関係を Chocolatey でインストール
+          modules: 'qtmultimedia'
+
       - name: Install Dependencies
         run: |
           choco install libsndfile
@@ -30,8 +36,6 @@ jobs:
       - name: Build
         run: cmake --build ${{github.workspace}}/build --config Release
 
-      # Windows (Visual Studio) の場合、実行ファイルは `build/Release/` 内に出力されます
-      # PowerShell の Compress-Archive コマンドを使用して ZIP 化します
       - name: Package Build Artifact
         run: |
           Compress-Archive -Path "${{github.workspace}}/build/Release/tmsexpress.exe" -DestinationPath "${{github.workspace}}/build-windows.zip"
@@ -39,5 +43,7 @@ jobs:
       - name: Attach to Release
         uses: softprops/action-gh-release@v1
         with:
+          # 💡 手動実行時に入力したタグ名を優先し、通常プッシュ時は自動でその時のタグ名を使う設定
+          tag_name: ${{ inputs.tag_name || github.ref_name }}
           files: |
             ${{github.workspace}}/build-windows.zip
