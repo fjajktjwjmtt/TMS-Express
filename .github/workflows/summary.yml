@@ -1,0 +1,42 @@
+name: Build & Release (Windows)
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      # WindowsでのQt環境構築は、公式のセットアップアクションを使用するのが最も確実です
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.5.0' # プロジェクトで使用しているQtのバージョンに合わせて変更してください
+
+      # libsndfile などのその他の依存関係を Chocolatey でインストール
+      - name: Install Dependencies
+        run: |
+          choco install libsndfile
+
+      - name: Configure Build
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DTMSEXPRESS_BUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build ${{github.workspace}}/build --config Release
+
+      # Windows (Visual Studio) の場合、実行ファイルは `build/Release/` 内に出力されます
+      # PowerShell の Compress-Archive コマンドを使用して ZIP 化します
+      - name: Package Build Artifact
+        run: |
+          Compress-Archive -Path "${{github.workspace}}/build/Release/tmsexpress.exe" -DestinationPath "${{github.workspace}}/build-windows.zip"
+
+      - name: Attach to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{github.workspace}}/build-windows.zip
