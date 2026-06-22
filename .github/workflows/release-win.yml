@@ -24,16 +24,19 @@ jobs:
           version: '6.5.0'
           modules: 'qtmultimedia'
 
-      # 💡 依存関係のインストール方法を変更
-      # Windows用の軽量な pkg-config (pkgconfiglite) を入れ、libsndfile は vcpkg でビルドします
       - name: Install Dependencies
         run: |
           choco install pkgconfiglite
           vcpkg install libsndfile:x64-windows
 
-      # 💡 CMakeに vcpkg のツールチェーンファイルと、生成された .pc へのパスを教えます
+      # 💡 末尾に -DCMAKE_POLICY_VERSION_MINIMUM=3.5 を追加しました
       - name: Configure Build
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DTMSEXPRESS_BUILD_TESTS=OFF -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+        run: |
+          cmake -B build `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DTMSEXPRESS_BUILD_TESTS=OFF `
+            -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         env:
           PKG_CONFIG_PATH: C:/vcpkg/installed/x64-windows/lib/pkgconfig
 
