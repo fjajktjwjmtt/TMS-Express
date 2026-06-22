@@ -3,8 +3,6 @@ on:
   push:
     tags:
       - "v*.*.*"
-  
-  # 💡 手動実行（Actionsタブからボタンぽちで実行）を有効化
   workflow_dispatch:
     inputs:
       tag_name:
@@ -26,12 +24,18 @@ jobs:
           version: '6.5.0'
           modules: 'qtmultimedia'
 
+      # 💡 依存関係のインストール方法を変更
+      # Windows用の軽量な pkg-config (pkgconfiglite) を入れ、libsndfile は vcpkg でビルドします
       - name: Install Dependencies
         run: |
-          choco install libsndfile
+          choco install pkgconfiglite
+          vcpkg install libsndfile:x64-windows
 
+      # 💡 CMakeに vcpkg のツールチェーンファイルと、生成された .pc へのパスを教えます
       - name: Configure Build
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DTMSEXPRESS_BUILD_TESTS=OFF
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DTMSEXPRESS_BUILD_TESTS=OFF -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+        env:
+          PKG_CONFIG_PATH: C:/vcpkg/installed/x64-windows/lib/pkgconfig
 
       - name: Build
         run: cmake --build ${{github.workspace}}/build --config Release
@@ -43,7 +47,6 @@ jobs:
       - name: Attach to Release
         uses: softprops/action-gh-release@v1
         with:
-          # 💡 手動実行時に入力したタグ名を優先し、通常プッシュ時は自動でその時のタグ名を使う設定
           tag_name: ${{ inputs.tag_name || github.ref_name }}
           files: |
             ${{github.workspace}}/build-windows.zip
