@@ -33,7 +33,7 @@ jobs:
         run: |
           (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
-      # 🛠️ 修正：エラーログの型ミスマッチ箇所をピンポイントで安全に文字列（またはwstring）へ変換
+      # 🛠️ 修正：変数名（filename / outputPath）を柔軟に拾って確実に文字列・wstringへ変換
       - name: Patch MainWindow.cpp for Windows Path Conversions
         shell: pwsh
         run: |
@@ -41,20 +41,22 @@ jobs:
           if (Test-Path $file) {
               $content = Get-Content $file -Raw
               
-              # 1. 265行目: AudioBuffer::render(path) -> .string()化
-              $content = $content -replace 'audioBuffer\.render\(path\)', 'audioBuffer.render(path.string())'
+              # 1. 265行目付近: audioBuffer.render(filename) -> .string()化
+              $content = $content -replace 'audioBuffer\.render\(([^)]+)\)', 'audioBuffer.render(($1).string())'
               
-              # 2. 269行目: QUrl::fromLocalFile(path) -> QString::fromStdWString で Windows のパス（wchar_t）に対応
-              $content = $content -replace 'QUrl::fromLocalFile\(path\)', 'QUrl::fromLocalFile(QString::fromStdWString(path.wstring()))'
+              # 2. 269行目付近 & 308行目付近: QUrl::fromLocalFile(...) -> Windows用に wstring から QString へ変換
+              $content = $content -replace 'QUrl::fromLocalFile\(([^)]+)\)', 'QUrl::fromLocalFile(QString::fromStdWString(($1).wstring()))'
               
-              # 3. 302行目: Synthesizer::render(..., outputPath, ...) -> .string()化
-              $content = $content -replace ',\s*outputPath\s*,', ', outputPath.string(),'
+              # 3. 302行目付近: synthesizer.render(..., outputPath, ...) の第2引数を .string()化
+              # 前後の引数パターンに合わせて、outputPath 単位で確実に置換します
+              $content = $content -replace 'outputPath', 'outputPath.string()'
               
-              # 4. 308行目: QUrl::fromLocalFile(outputPath) -> 上記同様に wstring 経由で変換
-              $content = $content -replace 'QUrl::fromLocalFile\(outputPath\)', 'QUrl::fromLocalFile(QString::fromStdWString(outputPath.wstring()))'
+              # 万が一、上記置換で outputPath.string().string() のように重複した場合の安全弁
+              $content = $content -replace 'outputPath\.string\(\)\.string\(\)', 'outputPath.string()'
+              $content = $content -replace 'outputPath\.string\(\)\.wstring\(\)', 'outputPath.wstring()'
               
               Set-Content $file $content -NoNewline
-              Write-Host "Successfully applied exact patches to MainWindow.cpp!"
+              Write-Host "Successfully applied optimized patches to MainWindow.cpp!"
           } else {
               Write-Error "MainWindow.cpp not found!"
           }
