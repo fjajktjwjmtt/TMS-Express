@@ -12,7 +12,6 @@ on:
 
 jobs:
   build:
-    # 🛠️ 最新MSVCによるQt6.5やコードの互換性エラーを避けるため、安定した 2022 環境に固定
     runs-on: windows-2022
 
     steps:
@@ -35,6 +34,34 @@ jobs:
         run: |
           (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
+      # 🛠️ 追加: MainWindow.cpp の Windows 固有のパス型ミスマッチを自動でパッチするステップ
+      - name: Patch MainWindow.cpp for Windows Path Conversions
+        shell: pwsh
+        run: |
+          $file = "src/ui/gui/MainWindow.cpp"
+          if (Test-Path $file) {
+              $content = Get-Content $file
+              
+              # 265行目: render(path) -> render(path.string()) に置換
+              $content[264] = $content[264] -replace 'render\(([^,)]+)\)', 'render(($1).string())'
+              
+              # 269行目: .c_str() または .native().c_str() -> .string().c_str() に置換
+              $content[268] = $content[268] -replace '\.native\(\)\.c_str\(\)', '.string().c_str()'
+              $content[268] = $content[268] -replace '\.c_str\(\)', '.string().c_str()'
+              
+              # 302行目: render(arg1, path) -> render(arg1, path.string()) に置換
+              $content[301] = $content[301] -replace 'render\(([^,]+),\s*([^,)]+)', 'render($1, ($2).string()'
+              
+              # 308行目: .c_str() または .native().c_str() -> .string().c_str() に置換
+              $content[307] = $content[307] -replace '\.native\(\)\.c_str\(\)', '.string().c_str()'
+              $content[307] = $content[307] -replace '\.c_str\(\)', '.string().c_str()'
+              
+              Set-Content $file $content
+              Write-Host "Successfully patched MainWindow.cpp for Windows compatibility!"
+          } else {
+              Write-Error "MainWindow.cpp not found!"
+          }
+
       - name: Configure CMake
         shell: pwsh
         run: |
@@ -44,9 +71,8 @@ jobs:
             "-DTMSEXPRESS_BUILD_TESTS=OFF",
             "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
             "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
-            "-DCMAKE_CXX_FLAGS=/D_USE_MATH_DEFINES" 
+            "-DCMAKE_CXX_FLAGS=/D_USE_MATH_DEFINES"
           )
-          # 👆 一番下に `_USE_MATH_DEFINES` を追加し、Windowsでも M_PI を使えるようにしました
           cmake @cmakeArgs
         env:
           PKG_CONFIG_PATH: C:/vcpkg/installed/x64-windows/lib/pkgconfig
