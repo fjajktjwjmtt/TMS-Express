@@ -1,4 +1,4 @@
-Name: Build & Release (Windows)
+name: Build & Release (Windows)
 on:
   push:
     tags:
@@ -41,14 +41,10 @@ jobs:
           $file = "src/ui/gui/MainWindow.cpp"
           if (Test-Path $file) {
               $content = Get-Content $file
-              
               # 302行目の error C2664 対策: render の第2引数に .string() を付与する安全な置換
-              # render(引数1, 引数2, ...) の2番目の引数を自動検知して .string() に書き換えます
               $content = $content -replace '(\.render\([^,]+,\s*)([^,)]+)', '$1($2).string()'
-              
               # その他の.c_str()の互換性維持
               $content = $content -replace '\.native\(\)\.c_str\(\)', '.string().c_str()'
-              
               Set-Content $file $content
               Write-Host "Successfully patched MainWindow.cpp for Windows compatibility!"
           } else {
