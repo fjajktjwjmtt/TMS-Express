@@ -34,13 +34,17 @@ jobs:
         run: |
           (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
-      - name: Configure Build
-        run: |
-          cmake -B build `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DTMSEXPRESS_BUILD_TESTS=OFF `
-            -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
-            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+- name: Configure CMake
+  shell: pwsh
+  run: |
+    $cmakeArgs = @(
+      "-B", "build",
+      "-DCMAKE_BUILD_TYPE=Release",
+      "-DTMSEXPRESS_BUILD_TESTS=OFF",
+      "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+      "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+    )
+    cmake @cmakeArgs
         env:
           PKG_CONFIG_PATH: C:/vcpkg/installed/x64-windows/lib/pkgconfig
 
