@@ -34,18 +34,22 @@ jobs:
         run: |
           (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
-      # 🛠️ 自動修正: Synthesizer::render の引数を path から path.string() に変換する
+      # 🛠️ 自動修正: Windows固有の型エラー（renderとQUrl）をPowerShellで確実に置換する
       - name: Patch MainWindow.cpp for Windows Path Conversions
         shell: pwsh
         run: |
           $file = "src/ui/gui/MainWindow.cpp"
           if (Test-Path $file) {
-              $content = Get-Content $file
-              # 302行目の error C2664 対策: render の第2引数に .string() を付与する安全な置換
-              $content = $content -replace '(\.render\([^,]+,\s*)([^,)]+)', '$1($2).string()'
-              # その他の.c_str()の互換性維持
-              $content = $content -replace '\.native\(\)\.c_str\(\)', '.string().c_str()'
-              Set-Content $file $content
+              $content = Get-Content $file -Raw
+              
+              # 1. render(...) の第1引数、または第2引数の path を .string() に安全に置換
+              $content = $content -replace '(\.render\()([^,\)]+)(\))', '$1($2).string()$3'
+              $content = $content -replace '(\.render\([^,]+,\s*)([^,\)]+)', '$1($2).string()'
+              
+              # 2. QUrl::fromLocalFile(path) が Windows(wchar_t*) でエラーになるのを QString::fromStdWString で回避
+              $content = $content -replace 'QUrl::fromLocalFile\(([^ \)]+)\)', 'QUrl::fromLocalFile(QString::fromStdWString(($1).wstring()))'
+              
+              Set-Content $file $content -NoNewline
               Write-Host "Successfully patched MainWindow.cpp for Windows compatibility!"
           } else {
               Write-Error "MainWindow.cpp not found!"
