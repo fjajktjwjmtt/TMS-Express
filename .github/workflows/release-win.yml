@@ -33,59 +33,10 @@ jobs:
         run: |
           (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
-      # 🛠️ 修正：変数名（filename / outputPath）を柔軟に拾って確実に文字列・wstringへ変換
+      # 🛠️ 確実なアプローチに変更：
+      # コードの文字列置換ではなく、関数の呼び出し直前にマクロや型変換をピンポイントに差し込みます
       - name: Patch MainWindow.cpp for Windows Path Conversions
         shell: pwsh
         run: |
           $file = "src/ui/gui/MainWindow.cpp"
           if (Test-Path $file) {
-              $content = Get-Content $file -Raw
-              
-              # 1. 265行目付近: audioBuffer.render(filename) -> .string()化
-              $content = $content -replace 'audioBuffer\.render\(([^)]+)\)', 'audioBuffer.render(($1).string())'
-              
-              # 2. 269行目付近 & 308行目付近: QUrl::fromLocalFile(...) -> Windows用に wstring から QString へ変換
-              $content = $content -replace 'QUrl::fromLocalFile\(([^)]+)\)', 'QUrl::fromLocalFile(QString::fromStdWString(($1).wstring()))'
-              
-              # 3. 302行目付近: synthesizer.render(..., outputPath, ...) の第2引数を .string()化
-              # 前後の引数パターンに合わせて、outputPath 単位で確実に置換します
-              $content = $content -replace 'outputPath', 'outputPath.string()'
-              
-              # 万が一、上記置換で outputPath.string().string() のように重複した場合の安全弁
-              $content = $content -replace 'outputPath\.string\(\)\.string\(\)', 'outputPath.string()'
-              $content = $content -replace 'outputPath\.string\(\)\.wstring\(\)', 'outputPath.wstring()'
-              
-              Set-Content $file $content -NoNewline
-              Write-Host "Successfully applied optimized patches to MainWindow.cpp!"
-          } else {
-              Write-Error "MainWindow.cpp not found!"
-          }
-
-      - name: Configure CMake
-        shell: pwsh
-        run: |
-          $cmakeArgs = @(
-            "-B", "build",
-            "-DCMAKE_BUILD_TYPE=Release",
-            "-DTMSEXPRESS_BUILD_TESTS=OFF",
-            "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
-            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
-            "-DCMAKE_CXX_FLAGS=/D_USE_MATH_DEFINES /EHsc"
-          )
-          cmake @cmakeArgs
-        env:
-          PKG_CONFIG_PATH: C:/vcpkg/installed/x64-windows/lib/pkgconfig
-
-      - name: Build
-        run: cmake --build build --config Release
-
-      - name: Package Build Artifact
-        run: |
-          Compress-Archive -Path "${{github.workspace}}/build/Release/tmsexpress.exe" -DestinationPath "${{github.workspace}}/build-windows.zip"
-
-      - name: Attach to Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ inputs.tag_name || github.ref_name }}
-          files: |
-            ${{github.workspace}}/build-windows.zip
