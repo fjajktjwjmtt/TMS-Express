@@ -24,19 +24,21 @@ jobs:
           version: '6.5.0'
           modules: 'qtmultimedia'
 
+      # 💡 libsamplerate:x64-windows を vcpkg のインストールリストに追加しました
       - name: Install Dependencies
         run: |
           choco install pkgconfiglite
-          vcpkg install libsndfile:x64-windows
+          vcpkg install libsndfile:x64-windows libsamplerate:x64-windows
 
-      # 💡 末尾に -DCMAKE_POLICY_VERSION_MINIMUM=3.5 を追加しました
+      # 💡 末尾に -DCPM_USE_LOCAL_PACKAGES=ON を追加しました
       - name: Configure Build
         run: |
           cmake -B build `
             -DCMAKE_BUILD_TYPE=Release `
             -DTMSEXPRESS_BUILD_TESTS=OFF `
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
-            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
+            -DCPM_USE_LOCAL_PACKAGES=ON
         env:
           PKG_CONFIG_PATH: C:/vcpkg/installed/x64-windows/lib/pkgconfig
 
