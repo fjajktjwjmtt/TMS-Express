@@ -33,7 +33,7 @@ jobs:
         run: |
           (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
-      # 🛠️ 修正：壊れやすい正規表現をやめ、特定のパス変数名だけを安全に変換
+      # 🛠️ 修正：エラーログの型ミスマッチ箇所をピンポイントで安全に文字列（またはwstring）へ変換
       - name: Patch MainWindow.cpp for Windows Path Conversions
         shell: pwsh
         run: |
@@ -41,24 +41,20 @@ jobs:
           if (Test-Path $file) {
               $content = Get-Content $file -Raw
               
-              # 1. 関数引数に紛れ込んだ誤置換を一旦すべて綺麗にリセット
-              $content = $content -replace '\.string\(\)\.string\(\)', '.string()'
+              # 1. 265行目: AudioBuffer::render(path) -> .string()化
+              $content = $content -replace 'audioBuffer\.render\(path\)', 'audioBuffer.render(path.string())'
               
-              # 2. 以前の広範囲な置換によるバグを防ぐため、特定のファイルパスの変数だけに絞って置換を適用
-              # 呼び出しで使われている可能性の高い path / filename / filePath などの変数に限定して .string() 化
-              $content = $content -replace ',\s*path\s*,', ', path.string(),'
-              $content = $content -replace ',\s*filename\s*,', ', filename.string(),'
+              # 2. 269行目: QUrl::fromLocalFile(path) -> QString::fromStdWString で Windows のパス（wchar_t）に対応
+              $content = $content -replace 'QUrl::fromLocalFile\(path\)', 'QUrl::fromLocalFile(QString::fromStdWString(path.wstring()))'
+              
+              # 3. 302行目: Synthesizer::render(..., outputPath, ...) -> .string()化
               $content = $content -replace ',\s*outputPath\s*,', ', outputPath.string(),'
               
-              # AudioBuffer::render(path) のように引数が1つだけの場合のケア
-              $content = $content -replace '\.render\(path\)', '.render(path.string())'
-              $content = $content -replace '\.render\(filename\)', '.render(filename.string())'
-              
-              # 3. QUrl::fromLocalFile のエラー対応 (安全に文字列経由にする)
-              $content = $content -replace 'QUrl::fromLocalFile\((path|filename|outputPath)\)', 'QUrl::fromLocalFile(QString::fromStdWString(($1).wstring()))'
+              # 4. 308行目: QUrl::fromLocalFile(outputPath) -> 上記同様に wstring 経由で変換
+              $content = $content -replace 'QUrl::fromLocalFile\(outputPath\)', 'QUrl::fromLocalFile(QString::fromStdWString(outputPath.wstring()))'
               
               Set-Content $file $content -NoNewline
-              Write-Host "Successfully patched MainWindow.cpp safely!"
+              Write-Host "Successfully applied exact patches to MainWindow.cpp!"
           } else {
               Write-Error "MainWindow.cpp not found!"
           }
