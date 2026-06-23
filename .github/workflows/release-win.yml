@@ -76,9 +76,21 @@ jobs:
           cmake @cmakeArgs
         env:
           PKG_CONFIG_PATH: C:/vcpkg/installed/x64-windows/lib/pkgconfig
+    - name: Fix MainWindow.cpp for MSVC (std::filesystem::path to std::string)
+      shell: pwsh
+      run: |
+        $filePath = "src/ui/gui/MainWindow.cpp"
+        if (Test-Path $filePath) {
+          # エラーが出ている引数の渡し方を .string() 付きに置換します
+          (Get-Content $filePath) -replace 'outputPath', 'outputPath.string()' | Set-Content $filePath
+          Write-Output "Successfully patched MainWindow.cpp"
+        } else {
+          Write-Error "MainWindow.cpp not found!"
+        }
 
-      - name: Build
-        run: cmake --build ${{github.workspace}}/build --config Release
+    # この下につづく既存のビルドステップ
+    - name: Build
+      run: cmake --build build --config Release
 
       - name: Package Build Artifact
         run: |
