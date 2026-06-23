@@ -12,7 +12,8 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    # 🛠️ 最新MSVCによるQt6.5やコードの互換性エラーを避けるため、安定した 2022 環境に固定
+    runs-on: windows-2022
 
     steps:
       - name: Checkout Repo
@@ -34,7 +35,6 @@ jobs:
         run: |
           (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
-      # 🛠️ インデントを修正し、envの位置をrunと同じレベルに直しました
       - name: Configure CMake
         shell: pwsh
         run: |
@@ -43,8 +43,10 @@ jobs:
             "-DCMAKE_BUILD_TYPE=Release",
             "-DTMSEXPRESS_BUILD_TESTS=OFF",
             "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
-            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            "-DCMAKE_CXX_FLAGS=/D_USE_MATH_DEFINES" 
           )
+          # 👆 一番下に `_USE_MATH_DEFINES` を追加し、Windowsでも M_PI を使えるようにしました
           cmake @cmakeArgs
         env:
           PKG_CONFIG_PATH: C:/vcpkg/installed/x64-windows/lib/pkgconfig
