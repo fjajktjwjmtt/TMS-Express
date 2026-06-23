@@ -1,4 +1,4 @@
-name: Build & Release (Windows)
+Name: Build & Release (Windows)
 on:
   push:
     tags:
@@ -34,7 +34,7 @@ jobs:
         run: |
           (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
-      # 🛠️ 追加: MainWindow.cpp の Windows 固有のパス型ミスマッチを自動でパッチするステップ
+      # 🛠️ 自動修正: Synthesizer::render の引数を path から path.string() に変換する
       - name: Patch MainWindow.cpp for Windows Path Conversions
         shell: pwsh
         run: |
@@ -42,19 +42,12 @@ jobs:
           if (Test-Path $file) {
               $content = Get-Content $file
               
-              # 265行目: render(path) -> render(path.string()) に置換
-              $content[264] = $content[264] -replace 'render\(([^,)]+)\)', 'render(($1).string())'
+              # 302行目の error C2664 対策: render の第2引数に .string() を付与する安全な置換
+              # render(引数1, 引数2, ...) の2番目の引数を自動検知して .string() に書き換えます
+              $content = $content -replace '(\.render\([^,]+,\s*)([^,)]+)', '$1($2).string()'
               
-              # 269行目: .c_str() または .native().c_str() -> .string().c_str() に置換
-              $content[268] = $content[268] -replace '\.native\(\)\.c_str\(\)', '.string().c_str()'
-              $content[268] = $content[268] -replace '\.c_str\(\)', '.string().c_str()'
-              
-              # 302行目: render(arg1, path) -> render(arg1, path.string()) に置換
-              $content[301] = $content[301] -replace 'render\(([^,]+),\s*([^,)]+)', 'render($1, ($2).string()'
-              
-              # 308行目: .c_str() または .native().c_str() -> .string().c_str() に置換
-              $content[307] = $content[307] -replace '\.native\(\)\.c_str\(\)', '.string().c_str()'
-              $content[307] = $content[307] -replace '\.c_str\(\)', '.string().c_str()'
+              # その他の.c_str()の互換性維持
+              $content = $content -replace '\.native\(\)\.c_str\(\)', '.string().c_str()'
               
               Set-Content $file $content
               Write-Host "Successfully patched MainWindow.cpp for Windows compatibility!"
@@ -71,26 +64,14 @@ jobs:
             "-DTMSEXPRESS_BUILD_TESTS=OFF",
             "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
             "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
-            "-DCMAKE_CXX_FLAGS=/D_USE_MATH_DEFINES"
+            "-DCMAKE_CXX_FLAGS=/D_USE_MATH_DEFINES /EHsc"
           )
           cmake @cmakeArgs
         env:
           PKG_CONFIG_PATH: C:/vcpkg/installed/x64-windows/lib/pkgconfig
-    - name: Fix MainWindow.cpp for MSVC (std::filesystem::path to std::string)
-      shell: pwsh
-      run: |
-        $filePath = "src/ui/gui/MainWindow.cpp"
-        if (Test-Path $filePath) {
-          # エラーが出ている引数の渡し方を .string() 付きに置換します
-          (Get-Content $filePath) -replace 'outputPath', 'outputPath.string()' | Set-Content $filePath
-          Write-Output "Successfully patched MainWindow.cpp"
-        } else {
-          Write-Error "MainWindow.cpp not found!"
-        }
 
-    # この下につづく既存のビルドステップ
-    - name: Build
-      run: cmake --build build --config Release
+      - name: Build
+        run: cmake --build build --config Release
 
       - name: Package Build Artifact
         run: |
