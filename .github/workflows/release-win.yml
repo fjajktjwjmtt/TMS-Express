@@ -33,16 +33,32 @@ jobs:
         run: |
           (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
+      # 🛠️ 修正：壊れやすい正規表現をやめ、特定のパス変数名だけを安全に変換
       - name: Patch MainWindow.cpp for Windows Path Conversions
         shell: pwsh
         run: |
           $file = "src/ui/gui/MainWindow.cpp"
           if (Test-Path $file) {
               $content = Get-Content $file -Raw
-              $content = $content -replace '(\.render\()([^,\)]+)(\))', '$1($2).string()$3'
-              $content = $content -replace '(\.render\([^,]+,\s*)([^,\)]+)', '$1($2).string()'
-              $content = $content -replace 'QUrl::fromLocalFile\(([^ \)]+)\)', 'QUrl::fromLocalFile(QString::fromStdWString(($1).wstring()))'
+              
+              # 1. 関数引数に紛れ込んだ誤置換を一旦すべて綺麗にリセット
+              $content = $content -replace '\.string\(\)\.string\(\)', '.string()'
+              
+              # 2. 以前の広範囲な置換によるバグを防ぐため、特定のファイルパスの変数だけに絞って置換を適用
+              # 呼び出しで使われている可能性の高い path / filename / filePath などの変数に限定して .string() 化
+              $content = $content -replace ',\s*path\s*,', ', path.string(),'
+              $content = $content -replace ',\s*filename\s*,', ', filename.string(),'
+              $content = $content -replace ',\s*outputPath\s*,', ', outputPath.string(),'
+              
+              # AudioBuffer::render(path) のように引数が1つだけの場合のケア
+              $content = $content -replace '\.render\(path\)', '.render(path.string())'
+              $content = $content -replace '\.render\(filename\)', '.render(filename.string())'
+              
+              # 3. QUrl::fromLocalFile のエラー対応 (安全に文字列経由にする)
+              $content = $content -replace 'QUrl::fromLocalFile\((path|filename|outputPath)\)', 'QUrl::fromLocalFile(QString::fromStdWString(($1).wstring()))'
+              
               Set-Content $file $content -NoNewline
+              Write-Host "Successfully patched MainWindow.cpp safely!"
           } else {
               Write-Error "MainWindow.cpp not found!"
           }
