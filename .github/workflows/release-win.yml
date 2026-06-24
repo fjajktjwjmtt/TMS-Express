@@ -1,4 +1,40 @@
-# 🛠️ 【修正版】std::filesystem::path 型の変数に明示的に .string() を付与するパッチ
+name: Build & Release (Windows)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag Name'
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.5.0'
+          modules: 'qtmultimedia'
+
+      - name: Install Dependencies
+        run: |
+          choco install pkgconfiglite
+          vcpkg install libsndfile:x64-windows
+
+      - name: Patch CMakeLists.txt for MSVC
+        run: |
+          (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
+
+      # 🛠️ パス変換の不具合を強引に解決する自動書き換えステップ
       - name: Patch MainWindow.cpp for Windows Path Conversions
         shell: pwsh
         run: |
@@ -12,7 +48,7 @@
                       $lines[$i] = [regex]::Replace($lines[$i], 'audioBuffer\.render\s*\((.*?)\)', 'audioBuffer.render(($1).string())')
                   }
                   
-                  # 2. synthesizer.render(arg1, path, arg3, arg4) -> 第2引数に .string() を付与
+                  # 2. synthesizer.render(arg1, path, arg3, arg4) -> 第2引数に .string() を強制付与
                   if ($lines[$i] -match 'synthesizer\.render\s*\(' -and $lines[$i] -notmatch '\.string\(\)') {
                       $lines[$i] = [regex]::Replace($lines[$i], 'synthesizer\.render\s*\(([^,]+),\s*([^,]+),\s*(.*)\)', 'synthesizer.render($1, ($2).string(), $3)')
                   }
@@ -22,3 +58,32 @@
           } else {
               Write-Error "MainWindow.cpp not found!"
           }
+
+      - name: Configure CMake
+        shell: pwsh
+        run: |
+          $cmakeArgs = @(
+            "-B", "build",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DTMSEXPRESS_BUILD_TESTS=OFF",
+            "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            "-DCMAKE_CXX_FLAGS=/D_USE_MATH_DEFINES /EHsc /Zc:__cplusplus"
+          )
+          cmake @cmakeArgs
+        env:
+          PKG_CONFIG_PATH: C:/vcpkg/installed/x64-windows/lib/pkgconfig
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Package Build Artifact
+        run: |
+          Compress-Archive -Path "${{github.workspace}}/build/Release/tmsexpress.exe" -DestinationPath "${{github.workspace}}/build-windows.zip"
+
+      - name: Attach to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ inputs.tag_name || github.ref_name }}
+          files: |
+            ${{github.workspace}}/build-windows.zip
