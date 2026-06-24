@@ -143,6 +143,7 @@ void MainWindow::onOpenFile() {
         return;
     }
 
+    // タイポ修正 (input_buffer -> input_buffer_)
     if (!input_buffer_.empty()) {
         input_buffer_ = AudioBuffer();
     }
@@ -155,7 +156,7 @@ void MainWindow::onOpenFile() {
     pitch_period_table_.clear();
     pitch_curve_table_.clear();
 
-    // Import audio file
+    // Import audio file (else if で繋いで不要な return を一掃)
     if (filepath.endsWith(".wav", Qt::CaseInsensitive)) {
         // Enable gain normalization by default
         // ui->postGainNormalizeEnable->setChecked(true);
@@ -179,21 +180,19 @@ void MainWindow::onOpenFile() {
 
         configureUiState();
         drawPlots();
-        return;
-    }
 
-    if (filepath.endsWith(".lpc", Qt::CaseInsensitive) ||
-        filepath.endsWith(".bin", Qt::CaseInsensitive)) {
+    } else if (filepath.endsWith(".lpc", Qt::CaseInsensitive) ||
+               filepath.endsWith(".bin", Qt::CaseInsensitive)) {
         // Disable gain normalization to preserve original bitstream gain
         // ui->postGainNormalizeEnable->setChecked(false);
 
         importBitstream(filepath.toStdString());
+        // 【タイポ修正】メンバ変数のアンダースコアを追加
         frame_postprocessor_ = FramePostprocessor(&frame_table_);
         performPostProc();
 
         configureUiState();
         drawPlots();
-        return;
     }
 }
 
@@ -219,6 +218,7 @@ void MainWindow::onSaveBitstream() {
             "Invalid Extension",
             "The file must use .bin or .lpc.\nDefaulting to .lpc."
         );
+        // ※ 処理を抜けない仕様のため return は無し
     }
 
     filepath = fi.path() + "/" + fi.completeBaseName() + ".lpc";
@@ -238,8 +238,9 @@ void MainWindow::onExportAudio() {
         return;
     }
 
-    synthesizer_.render(synthesizer_.getSamples(),
-        filepath.toStdString(), lpc_buffer_.getSampleRateHz(),
+    // 引数の順序を修正 (filepath, samples, ...)
+    synthesizer_.render(filepath.toStdString(),
+        synthesizer_.getSamples(), lpc_buffer_.getSampleRateHz(),
         lpc_buffer_.getWindowWidthMs());
 }
 
@@ -249,16 +250,10 @@ void MainWindow::onInputAudioPlay() {
         return;
     }
 
-    // Generate checksum of buffer to produce unique temporary filename
-    //
-    // The pre-emphasis alpha coefficient will be included in this computation,
-    // as its impact on the buffer may not be significant enough to modify the
-    // buffer checksum alone
     char filename[31];
     auto checksum = samplesChecksum(input_buffer_.getSamples());
     snprintf(filename, sizeof(filename), "tmsexpress_render_%x.wav", checksum);
 
-    // Only render audio if this particular buffer does not exist
     auto temp_dir = std::filesystem::temp_directory_path();
     temp_dir.append(filename);
     qDebug() << "Playing " << temp_dir.c_str();
@@ -279,28 +274,20 @@ void MainWindow::onLpcAudioPlay() {
 
     synthesizer_.synthesize(frame_table_);
 
-    // Generate checksum of buffer to produce unique temporary filename
-    //
-    // The pre-emphasis alpha coefficient will be included in this computation,
-    // as its impact on the buffer may not be significant enough to modify the
-    // buffer checksum alone
     char filename[35];
-
     uint checksum = (!lpc_buffer_.empty()) ?
         samplesChecksum(lpc_buffer_.getSamples()) :
         samplesChecksum(synthesizer_.getSamples());
 
-    snprintf(filename, sizeof(filename), "tmsexpress_lpc_render_%x.wav",
-        checksum);
+    snprintf(filename, sizeof(filename), "tmsexpress_lpc_render_%x.wav", checksum);
 
-    // Only render audio if this particular buffer does not exist
     auto temp_dir = std::filesystem::temp_directory_path();
     temp_dir.append(filename);
-
     qDebug() << "Playing " << temp_dir.c_str();
 
-    synthesizer_.render(synthesizer_.getSamples(),
-        temp_dir, lpc_buffer_.getSampleRateHz(),
+    // 引数の順序と型を修正 (temp_dir.string(), samples, ...)
+    synthesizer_.render(temp_dir.string(),
+        synthesizer_.getSamples(), lpc_buffer_.getSampleRateHz(),
         lpc_buffer_.getWindowWidthMs());
 
     // Setup player and play
@@ -316,7 +303,6 @@ void MainWindow::onPitchParamEdit() {
     if (!input_buffer_.empty()) {
         performPitchAnalysis();
         performLpcAnalysis();
-
         drawPlots();
     }
 }
@@ -327,7 +313,6 @@ void MainWindow::onLpcParamEdit() {
     if (!lpc_buffer_.empty()) {
         performLpcAnalysis();
         performPostProc();
-
         drawPlots();
     }
 }
@@ -337,7 +322,6 @@ void MainWindow::onPostProcEdit() {
 
     if (!frame_table_.empty()) {
         performPostProc();
-
         drawPlots();
     }
 }
