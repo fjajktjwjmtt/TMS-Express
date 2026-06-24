@@ -33,48 +33,26 @@ jobs:
         run: |
           (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
-      # 🛠️ マクロを一切廃止し、安全に行単位で関数呼び出し引数のみを書き換えます
+      # 🛠️ 実際のコード構造（.c_str() の有無など）に完全対応させた確実な置換処理
       - name: Patch MainWindow.cpp for Windows Path Conversions
         shell: pwsh
         run: |
           $file = "src/ui/gui/MainWindow.cpp"
           if (Test-Path $file) {
-              $lines = Get-Content $file
-              $newLines = @()
+              $content = Get-Content $file -Raw
 
-              foreach ($line in $lines) {
-                  # Qtのヘッダーなどを汚染しないよう、関数呼び出しの特定の形だけを置換
-                  
-                  # 1. audioBuffer.render(...) への path 渡しを .string() に
-                  if ($line -match 'audioBuffer\s*\.\s*render\s*\(') {
-                      if ($line -match 'filename' -and -not $line -match '\.string\(\)') {
-                          $line = $line -replace 'filename', 'filename.string()'
-                      }
-                  }
-                  
-                  # 2. synthesizer.render(...) への path 渡しを .string() に
-                  if ($line -match 'synthesizer\s*\.\s*render\s*\(') {
-                      if ($line -match 'outputPath' -and -not $line -match '\.string\(\)') {
-                          $line = $line -replace 'outputPath', 'outputPath.string()'
-                      }
-                      if ($line -match 'filename' -and -not $line -match '\.string\(\)') {
-                          $line = $line -replace 'filename', 'filename.string()'
-                      }
-                  }
+              # 1. audioBuffer.render(...) の引数を .string() に統一
+              $content = $content -replace 'audioBuffer\s*\.\s*render\s*\(\s*filename(?:\.c_str\(\))?\s*\)', 'audioBuffer.render(filename.string())'
 
-                  # 3. QUrl::fromLocalFile(...) への path 渡しを wstring 経由で QString 化
-                  if ($line -match 'QUrl\s*::\s*fromLocalFile\s*\(\s*filename\s*\)') {
-                      $line = $line -replace 'QUrl\s*::\s*fromLocalFile\s*\(\s*filename\s*\)', 'QUrl::fromLocalFile(QString::fromStdWString(filename.wstring()))'
-                  }
-                  if ($line -match 'QUrl\s*::\s*fromLocalFile\s*\(\s*outputPath\s*\)') {
-                      $line = $line -replace 'QUrl\s*::\s*fromLocalFile\s*\(\s*outputPath\s*\)', 'QUrl::fromLocalFile(QString::fromStdWString(outputPath.wstring()))'
-                  }
+              # 2. synthesizer.render(..., path, ...) の第2引数を .string() に統一
+              $content = $content -replace 'synthesizer\s*\.\s*render\s*\(\s*([^,]+)\s*,\s*outputPath(?:\.c_str\(\))?', 'synthesizer.render($1, outputPath.string()'
 
-                  $newLines += $line
-              }
-              
-              Set-Content $file $newLines
-              Write-Host "Successfully patched target lines safely in MainWindow.cpp!"
+              # 3. QUrl::fromLocalFile(...) の中身がどんな形であれ、Windowsで安全な wstring / wchar_t 経由でQString化
+              $content = $content -replace 'QUrl\s*::\s*fromLocalFile\s*\(\s*filename(?:\.c_str\(\))?\s*\)', 'QUrl::fromLocalFile(QString::fromStdWString(filename.wstring()))'
+              $content = $content -replace 'QUrl\s*::\s*fromLocalFile\s*\(\s*outputPath(?:\.c_str\(\))?\s*\)', 'QUrl::fromLocalFile(QString::fromStdWString(outputPath.wstring()))'
+
+              Set-Content $file $content -NoNewline
+              Write-Host "Successfully applied precise pattern patches to MainWindow.cpp!"
           } else {
               Write-Error "MainWindow.cpp not found!"
           }
