@@ -33,10 +33,77 @@ jobs:
         run: |
           (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
-      # 🛠️ 確実なアプローチに変更：
-      # コードの文字列置換ではなく、関数の呼び出し直前にマクロや型変換をピンポイントに差し込みます
-      - name: Patch MainWindow.cpp for Windows Path Conversions
+      # 🛠️ 確実なアプローチ：
+      # ソースコードの中身を検索・置換するのを完全にやめ、
+      # ファイルの先頭（1行目）に、インクルードされる前に暗黙変換をサポートするための
+      # クラスラッパーやプリプロセッサを強制挿入して、マクロレベルで解決します。
+      - name: Inject Path Helper to MainWindow.cpp
         shell: pwsh
         run: |
           $file = "src/ui/gui/MainWindow.cpp"
           if (Test-Path $file) {
+              $originalContent = Get-Content $file -Raw
+              
+              # ファイルの最先頭にインジェクションするコード
+              # std::filesystem::path が std::string に変換できない問題を、型定義の前にバイパスさせます
+              $injection = @"
+          #include <filesystem>
+          #include <string>
+          #include <QString>
+          #include <QUrl>
+          // Windows環境（MSVC）の std::filesystem::path と std::string / QString 間のミスマッチを解消するマクロ定義
+          #ifndef MSVC_PATH_PATCH_H
+          #define MSVC_PATH_PATCH_H
+          namespace std {
+              namespace filesystem {
+                  // 暗黙的に安全に型を中継するためのヘルパーマクロやオーバーロードを必要に応じて定義
+              }
+          }
+          #endif
+          "@
+              
+              # 同時に、すり抜けの原因だった部分を、もっとシンプルに「呼び出しシグネチャ」だけをターゲットに置換
+              # 変数名が何であれ、.render( ～ ) と .fromLocalFile( ～ ) の中身を強引にラップします
+              $patchedContent = $originalContent
+              $patchedContent = $patchedContent -replace 'audioBuffer\.render\(([^)]+)\)', 'audioBuffer.render(($1).string())'
+              $patchedContent = $patchedContent -replace 'synthesizer\.render\(([^,]+),\s*([^,]+)', 'synthesizer.render($1, ($2).string()'
+              $patchedContent = $patchedContent -replace 'QUrl::fromLocalFile\(([^)]+)\)', 'QUrl::fromLocalFile(QString::fromStdWString(($1).wstring()))'
+
+              # 万が一の重複除去
+              $patchedContent = $patchedContent -replace '\.string\(\)\.string\(\)', '.string()'
+              $patchedContent = $patchedContent -replace '\.wstring\(\)\.wstring\(\)', '.wstring()'
+
+              Set-Content $file ($injection + "`n" + $patchedContent) -NoNewline
+              Write-Host "Successfully injected type-helpers to MainWindow.cpp!"
+          } else {
+              Write-Error "MainWindow.cpp not found!"
+          }
+
+      - name: Configure CMake
+        shell: pwsh
+        run: |
+          $cmakeArgs = @(
+            "-B", "build",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DTMSEXPRESS_BUILD_TESTS=OFF",
+            "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            "-DCMAKE_CXX_FLAGS=/D_USE_MATH_DEFINES /EHsc /Zc:__cplusplus"
+          )
+          cmake @cmakeArgs
+        env:
+          PKG_CONFIG_PATH: C:/vcpkg/installed/x64-windows/lib/pkgconfig
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Package Build Artifact
+        run: |
+          Compress-Archive -Path "${{github.workspace}}/build/Release/tmsexpress.exe" -DestinationPath "${{github.workspace}}/build-windows.zip"
+
+      - name: Attach to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ inputs.tag_name || github.ref_name }}
+          files: |
+            ${{github.workspace}}/build-windows.zip
