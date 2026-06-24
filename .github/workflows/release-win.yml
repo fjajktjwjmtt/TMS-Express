@@ -33,26 +33,33 @@ jobs:
         run: |
           (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
-      # 🛠️ 実際のコード構造（.c_str() の有無など）に完全対応させた確実な置換処理
+      # 🛠️ 【最終版】変数名を推測せず、カッコ内の引数構造そのものをキャプチャして型キャストで包みます
       - name: Patch MainWindow.cpp for Windows Path Conversions
         shell: pwsh
         run: |
           $file = "src/ui/gui/MainWindow.cpp"
           if (Test-Path $file) {
-              $content = Get-Content $file -Raw
+              $lines = Get-Content $file
+              for ($i = 0; $i -lt $lines.Count; $i++) {
+                  # 1. audioBuffer.render( 任意の引数 ) の置換
+                  # 引数を std::filesystem::path で包んでから .string() に変換
+                  if ($lines[$i] -match 'audioBuffer\.render\s*\(' -and $lines[$i] -notmatch 'std::filesystem::path') {
+                      $lines[$i] = [regex]::Replace($lines[$i], 'audioBuffer\.render\s*\((.*?)\)', 'audioBuffer.render(std::filesystem::path($1).string())')
+                  }
+                  
+                  # 2. synthesizer.render( 第1引数, 第2引数(ここがパス), 残りの引数 ) の置換
+                  if ($lines[$i] -match 'synthesizer\.render\s*\(' -and $lines[$i] -notmatch 'std::filesystem::path') {
+                      $lines[$i] = [regex]::Replace($lines[$i], 'synthesizer\.render\s*\((.*?),\s*(.*?),\s*(.*)', 'synthesizer.render($1, std::filesystem::path($2).string(), $3')
+                  }
 
-              # 1. audioBuffer.render(...) の引数を .string() に統一
-              $content = $content -replace 'audioBuffer\s*\.\s*render\s*\(\s*filename(?:\.c_str\(\))?\s*\)', 'audioBuffer.render(filename.string())'
-
-              # 2. synthesizer.render(..., path, ...) の第2引数を .string() に統一
-              $content = $content -replace 'synthesizer\s*\.\s*render\s*\(\s*([^,]+)\s*,\s*outputPath(?:\.c_str\(\))?', 'synthesizer.render($1, outputPath.string()'
-
-              # 3. QUrl::fromLocalFile(...) の中身がどんな形であれ、Windowsで安全な wstring / wchar_t 経由でQString化
-              $content = $content -replace 'QUrl\s*::\s*fromLocalFile\s*\(\s*filename(?:\.c_str\(\))?\s*\)', 'QUrl::fromLocalFile(QString::fromStdWString(filename.wstring()))'
-              $content = $content -replace 'QUrl\s*::\s*fromLocalFile\s*\(\s*outputPath(?:\.c_str\(\))?\s*\)', 'QUrl::fromLocalFile(QString::fromStdWString(outputPath.wstring()))'
-
-              Set-Content $file $content -NoNewline
-              Write-Host "Successfully applied precise pattern patches to MainWindow.cpp!"
+                  # 3. QUrl::fromLocalFile( 任意の引数.c_str() ) の置換
+                  # Windows特有の wchar_t 問題を回避するため、wstring を経由して QString 化
+                  if ($lines[$i] -match 'QUrl::fromLocalFile\s*\(' -and $lines[$i] -match '\.c_str\(\)') {
+                      $lines[$i] = [regex]::Replace($lines[$i], 'QUrl::fromLocalFile\s*\((.*?)\.c_str\(\)\s*\)', 'QUrl::fromLocalFile(QString::fromStdWString(std::filesystem::path($1).wstring()))')
+                  }
+              }
+              Set-Content $file $lines
+              Write-Host "Successfully applied struct-aware type patches to MainWindow.cpp!"
           } else {
               Write-Error "MainWindow.cpp not found!"
           }
@@ -84,4 +91,4 @@ jobs:
         with:
           tag_name: ${{ inputs.tag_name || github.ref_name }}
           files: |
-            ${{github.workspace}}/build-windows.zip
+            ${{github.workspace}}/
