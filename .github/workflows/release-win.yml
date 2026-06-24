@@ -34,7 +34,7 @@ jobs:
         run: |
           (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
-      # 🛠️ Windows特有の wchar_t / std::filesystem::path 関連エラーを一網打尽にするパッチ
+      # 🛠️ 変数名やポインタ(->)に関わらず、対象のrender関数を確実に仕留めるパッチ
       - name: Patch MainWindow.cpp for Windows Path Conversions
         shell: pwsh
         run: |
@@ -43,17 +43,17 @@ jobs:
               $lines = Get-Content $file
               for ($i = 0; $i -lt $lines.Count; $i++) {
                   
-                  # 1. audioBuffer.render(path) -> audioBuffer.render((path).string())
-                  if ($lines[$i] -match 'audioBuffer\.render\s*\(' -and $lines[$i] -notmatch '\.string\(\)') {
-                      $lines[$i] = [regex]::Replace($lines[$i], 'audioBuffer\.render\s*\((.*?)\)', 'audioBuffer.render(($1).string())')
+                  # 1. 引数が1つの render(...) をキャッチして (パス).string() に変換
+                  if ($lines[$i] -match '(?:\.|->)render\s*\([^,]+\)' -and $lines[$i] -notmatch '\.string\(\)') {
+                      $lines[$i] = [regex]::Replace($lines[$i], '((?:\.|->)render\s*)\((.*?)\)', '$1(($2).string())')
                   }
                   
-                  # 2. synthesizer.render(arg1, path, arg3, arg4) -> 第2引数に .string() を付与
-                  if ($lines[$i] -match 'synthesizer\.render\s*\(' -and $lines[$i] -notmatch '\.string\(\)') {
-                      $lines[$i] = [regex]::Replace($lines[$i], 'synthesizer\.render\s*\(([^,]+),\s*([^,]+),\s*(.*)\)', 'synthesizer.render($1, ($2).string(), $3)')
+                  # 2. 引数が4つの render(a, b, c, d) をキャッチして 第2引数に .string() を付与
+                  if ($lines[$i] -match '(?:\.|->)render\s*\(.*?,.*?,.*?,.*?\)' -and $lines[$i] -notmatch '\.string\(\)') {
+                      $lines[$i] = [regex]::Replace($lines[$i], '((?:\.|->)render\s*\([^,]+,\s*)([^,]+)(,\s*[^,]+,\s*[^)]+\))', '$1($2).string()$3')
                   }
                   
-                  # 3. QUrl::fromLocalFile(path.c_str()) -> QUrl::fromLocalFile(QString::fromStdString(path.string()))
+                  # 3. QUrl::fromLocalFile のワイド文字対策（前回同様）
                   if ($lines[$i] -match 'QUrl::fromLocalFile\s*\(' -and $lines[$i] -notmatch 'QString::fromStd') {
                       if ($lines[$i] -match 'QUrl::fromLocalFile\s*\((.*?)\.c_str\(\)\)') {
                           $lines[$i] = [regex]::Replace($lines[$i], 'QUrl::fromLocalFile\s*\((.*?)\.c_str\(\)\)', 'QUrl::fromLocalFile(QString::fromStdString($1.string()))')
@@ -63,7 +63,7 @@ jobs:
                   }
               }
               Set-Content $file $lines
-              Write-Host "Successfully applied all path and QUrl conversion patches to MainWindow.cpp!"
+              Write-Host "Successfully applied robust wildcard path conversion patches to MainWindow.cpp!"
           } else {
               Write-Error "MainWindow.cpp not found!"
           }
