@@ -33,10 +33,7 @@ jobs:
         run: |
           (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
-      # 🛠️ 確実なアプローチ：
-      # ソースコードの中身を検索・置換するのを完全にやめ、
-      # ファイルの先頭（1行目）に、インクルードされる前に暗黙変換をサポートするための
-      # クラスラッパーやプリプロセッサを強制挿入して、マクロレベルで解決します。
+      # 🛠️ 【超確実】正規表現の置換を一切やめ、C++のオーバーロードを追加してコンパイラに解決させます
       - name: Inject Path Helper to MainWindow.cpp
         shell: pwsh
         run: |
@@ -44,37 +41,36 @@ jobs:
           if (Test-Path $file) {
               $originalContent = Get-Content $file -Raw
               
-              # ファイルの最先頭にインジェクションするコード
-              # std::filesystem::path が std::string に変換できない問題を、型定義の前にバイパスさせます
+              # クラス定義や他のインクルードより前に読み込ませ、std::filesystem::path を
+              # QString や std::string に暗黙変換できるようにする橋渡し（ラッパー）
               $injection = @"
           #include <filesystem>
           #include <string>
           #include <QString>
           #include <QUrl>
-          // Windows環境（MSVC）の std::filesystem::path と std::string / QString 間のミスマッチを解消するマクロ定義
-          #ifndef MSVC_PATH_PATCH_H
-          #define MSVC_PATH_PATCH_H
-          namespace std {
-              namespace filesystem {
-                  // 暗黙的に安全に型を中継するためのヘルパーマクロやオーバーロードを必要に応じて定義
-              }
+
+          // QUrl::fromLocalFile が std::filesystem::path を直接受け取れるようにオーバーロードを定義
+          inline QUrl adhoc_fromLocalFile(const std::filesystem::path& p) {
+              return QUrl::fromLocalFile(QString::fromStdWString(p.wstring()));
           }
-          #endif
+          // マクロで既存の QUrl::fromLocalFile 呼び出しを横取りします
+          #define fromLocalFile(x) adhoc_fromLocalFile(x)
+
+          // 既存のメンバ関数呼び出しに対して、std::filesystem::path が渡されたら
+          // 自動的に .string() を呼んで解決させるための簡易ラッパークラス
+          struct AdhocPathWrapper {
+              std::filesystem::path p;
+              AdhocPathWrapper(const std::filesystem::path& path) : p(path) {}
+              operator std::string() const { return p.string(); }
+          };
+          // マクロで引数に path が渡されそうな箇所をラップ（コンパイラが自動でstd::stringにキャストします）
+          #define filename AdhocPathWrapper(filename)
+          #define outputPath AdhocPathWrapper(outputPath)
           "@
               
-              # 同時に、すり抜けの原因だった部分を、もっとシンプルに「呼び出しシグネチャ」だけをターゲットに置換
-              # 変数名が何であれ、.render( ～ ) と .fromLocalFile( ～ ) の中身を強引にラップします
-              $patchedContent = $originalContent
-              $patchedContent = $patchedContent -replace 'audioBuffer\.render\(([^)]+)\)', 'audioBuffer.render(($1).string())'
-              $patchedContent = $patchedContent -replace 'synthesizer\.render\(([^,]+),\s*([^,]+)', 'synthesizer.render($1, ($2).string()'
-              $patchedContent = $patchedContent -replace 'QUrl::fromLocalFile\(([^)]+)\)', 'QUrl::fromLocalFile(QString::fromStdWString(($1).wstring()))'
-
-              # 万が一の重複除去
-              $patchedContent = $patchedContent -replace '\.string\(\)\.string\(\)', '.string()'
-              $patchedContent = $patchedContent -replace '\.wstring\(\)\.wstring\(\)', '.wstring()'
-
-              Set-Content $file ($injection + "`n" + $patchedContent) -NoNewline
-              Write-Host "Successfully injected type-helpers to MainWindow.cpp!"
+              # 元のファイルにマクロを先頭に結合して保存（元のコードは1文字も弄りません）
+              Set-Content $file ($injection + "`n" + $originalContent) -NoNewline
+              Write-Host "Successfully injected compiler-level type helpers to MainWindow.cpp!"
           } else {
               Write-Error "MainWindow.cpp not found!"
           }
