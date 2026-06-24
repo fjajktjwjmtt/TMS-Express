@@ -34,7 +34,7 @@ jobs:
         run: |
           (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
-      # 🛠️ パス変換の不具合を強引に解決する自動書き換えステップ
+      # 🛠️ Windows特有の wchar_t / std::filesystem::path 関連エラーを一網打尽にするパッチ
       - name: Patch MainWindow.cpp for Windows Path Conversions
         shell: pwsh
         run: |
@@ -48,13 +48,22 @@ jobs:
                       $lines[$i] = [regex]::Replace($lines[$i], 'audioBuffer\.render\s*\((.*?)\)', 'audioBuffer.render(($1).string())')
                   }
                   
-                  # 2. synthesizer.render(arg1, path, arg3, arg4) -> 第2引数に .string() を強制付与
+                  # 2. synthesizer.render(arg1, path, arg3, arg4) -> 第2引数に .string() を付与
                   if ($lines[$i] -match 'synthesizer\.render\s*\(' -and $lines[$i] -notmatch '\.string\(\)') {
                       $lines[$i] = [regex]::Replace($lines[$i], 'synthesizer\.render\s*\(([^,]+),\s*([^,]+),\s*(.*)\)', 'synthesizer.render($1, ($2).string(), $3)')
                   }
+                  
+                  # 3. QUrl::fromLocalFile(path.c_str()) -> QUrl::fromLocalFile(QString::fromStdString(path.string()))
+                  if ($lines[$i] -match 'QUrl::fromLocalFile\s*\(' -and $lines[$i] -notmatch 'QString::fromStd') {
+                      if ($lines[$i] -match 'QUrl::fromLocalFile\s*\((.*?)\.c_str\(\)\)') {
+                          $lines[$i] = [regex]::Replace($lines[$i], 'QUrl::fromLocalFile\s*\((.*?)\.c_str\(\)\)', 'QUrl::fromLocalFile(QString::fromStdString($1.string()))')
+                      } else {
+                          $lines[$i] = [regex]::Replace($lines[$i], 'QUrl::fromLocalFile\s*\((.*?)\)', 'QUrl::fromLocalFile(QString::fromStdString(($1).string()))')
+                      }
+                  }
               }
               Set-Content $file $lines
-              Write-Host "Successfully applied robust path conversion patches to MainWindow.cpp!"
+              Write-Host "Successfully applied all path and QUrl conversion patches to MainWindow.cpp!"
           } else {
               Write-Error "MainWindow.cpp not found!"
           }
