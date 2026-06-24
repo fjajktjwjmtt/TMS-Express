@@ -1,11 +1,7 @@
 # TMS Express 🗣
 TMS Express generates bitstreams for the TMS5220 Voice Synthesis Processor. It
 also includes a TMS5220 emulator for synthesizing bitstreams as audio files.
-```suggestion
-    if (!input_buffer_.empty()) {
-        input_buffer_ = AudioBuffer();
-    }
-```
+
 
 ![TMS Express GUI Screenshot](doc/screenshot.png)
 
