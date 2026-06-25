@@ -11,7 +11,7 @@ on:
         required: true
         type: string
 
-# 👇 403エラーを直すために、この2行を必ず追加！
+# 403エラー対策の書き込み権限許可
 permissions:
   contents: write
 
@@ -26,8 +26,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-
-
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -39,11 +37,11 @@ jobs:
           choco install pkgconfiglite
           vcpkg install libsndfile:x64-windows
 
-      - name: Patch CMakeLists.txt for MSVC
-        run: |
-          (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
+          - name: Patch CMakeLists.txt for MSVC
+            run: |
+              (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
-      # 🛠️ 変数名やポインタ(->)に関わらず、対象のrender関数を確実に仕留めるパッチ
+      # 変数名やポインタ(->)に関わらず、対象のrender関数を確実に仕留めるパッチ
       - name: Patch MainWindow.cpp for Windows Path Conversions
         shell: pwsh
         run: |
@@ -62,7 +60,7 @@ jobs:
                       $lines[$i] = [regex]::Replace($lines[$i], '((?:\.|->)render\s*\([^,]+,\s*)([^,]+)(,\s*[^,]+,\s*[^)]+\))', '$1($2).string()$3')
                   }
                   
-                  # 3. QUrl::fromLocalFile のワイド文字対策（前回同様）
+                  # 3. QUrl::fromLocalFile のワイド文字対策
                   if ($lines[$i] -match 'QUrl::fromLocalFile\s*\(' -and $lines[$i] -notmatch 'QString::fromStd') {
                       if ($lines[$i] -match 'QUrl::fromLocalFile\s*\((.*?)\.c_str\(\)\)') {
                           $lines[$i] = [regex]::Replace($lines[$i], 'QUrl::fromLocalFile\s*\((.*?)\.c_str\(\)\)', 'QUrl::fromLocalFile(QString::fromStdString($1.string()))')
@@ -95,25 +93,14 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
+      # 重複していたZIP化処理を1つに統合（-Force オプション付きで上書きエラーを回避）
       - name: Package Build Artifact
-        run: |
-          Compress-Archive -Path "${{github.workspace}}/build/Release/tmsexpress.exe" -DestinationPath "${{github.workspace}}/build-windows.zip"
-      # ⚠️ もしZIP化してないなら、リリースステップの直前にこういう圧縮処理を入れる必要があるよ！
-- name: Archive Release
         shell: pwsh
-        run: |
-          # 末尾に「-Force」を追加して、既存のZIPを強制上書きするようにします
-          Compress-Archive -Path build/Release/* -DestinationPath build-windows.zip -Force
+        run: Compress-Archive -Path build/Release/* -DestinationPath build-windows.zip -Force
 
-      - name: Attach to release
-        uses: softprops/action-gh-release@v2  # Node24対応のv2に上げておくのがおすすめ！
+      # 重複していたリリースアタッチ処理をNode 24対応のv2で1つに統合
+      - name: Attach to Release
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: build-windows.zip # 👈 上で作ったZIPを指定
-
-      - name: Attach to Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ inputs.tag_name || github.ref_name }}
-          files: |
-            ${{github.workspace}}/build-windows.zip
+          files: build-windows.zip
