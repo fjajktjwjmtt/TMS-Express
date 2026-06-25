@@ -99,11 +99,11 @@ jobs:
         run: |
           Compress-Archive -Path "${{github.workspace}}/build/Release/tmsexpress.exe" -DestinationPath "${{github.workspace}}/build-windows.zip"
       # ⚠️ もしZIP化してないなら、リリースステップの直前にこういう圧縮処理を入れる必要があるよ！
-      - name: Archive Release
+- name: Archive Release
         shell: pwsh
         run: |
-          # 例: build/Release/ の中の成果物をZIPにまとめる場合
-          Compress-Archive -Path build/Release/* -DestinationPath build-windows.zip
+          # 末尾に「-Force」を追加して、既存のZIPを強制上書きするようにします
+          Compress-Archive -Path build/Release/* -DestinationPath build-windows.zip -Force
 
       - name: Attach to release
         uses: softprops/action-gh-release@v2  # Node24対応のv2に上げておくのがおすすめ！
