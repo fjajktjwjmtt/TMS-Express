@@ -93,18 +93,19 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      # 💡 【新規追加】windeployqt を使って、EXEの隣に必要なDLLやプラグインを全部自動コピーする
+      # 🛠️ エラー回避用のオプションを追加し、フォルダを移動してからデプロイをかけるように修正
       - name: Deploy Qt Runtime DLLs
         shell: pwsh
         run: |
-          windeployqt --release build/Release/tmsexpress.exe
+          cd build/Release
+          windeployqt --release --no-compiler-runtime --no-translations tmsexpress.exe
 
       # DLLが全部詰まったフォルダごとまとめてZIP化
       - name: Package Build Artifact
         shell: pwsh
         run: Compress-Archive -Path build/Release/* -DestinationPath build-windows.zip -Force
 
-      # リリースにアタッチ
+      # リッセージにアタッチ
       - name: Attach to Release
         uses: softprops/action-gh-release@v2
         with:
