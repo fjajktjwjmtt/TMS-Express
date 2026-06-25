@@ -1,0 +1,5 @@
+- name: Upload Build Artifact
+  uses: actions/upload-artifact@v4
+  with:
+    name: tms-express-windows
+    path: build/Release/ # 保存したいバイナリのパス
