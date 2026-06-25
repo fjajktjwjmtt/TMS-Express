@@ -37,9 +37,10 @@ jobs:
           choco install pkgconfiglite
           vcpkg install libsndfile:x64-windows
 
-          - name: Patch CMakeLists.txt for MSVC
-            run: |
-              (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
+      # 🛠️ ここ！完全に外のステップとして独立させました！
+      - name: Patch CMakeLists.txt for MSVC
+        run: |
+          (Get-Content CMakeLists.txt) -replace '-Wextra', '' -replace '-Wall', '' -replace '-Wpedantic', '' | Set-Content CMakeLists.txt
 
       # 変数名やポインタ(->)に関わらず、対象のrender関数を確実に仕留めるパッチ
       - name: Patch MainWindow.cpp for Windows Path Conversions
