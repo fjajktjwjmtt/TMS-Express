@@ -11,13 +11,22 @@ on:
         required: true
         type: string
 
+# 👇 403エラーを直すために、この2行を必ず追加！
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-2022
+    
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag_name || github.ref_name }}
 
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
+
+
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
@@ -89,6 +98,18 @@ jobs:
       - name: Package Build Artifact
         run: |
           Compress-Archive -Path "${{github.workspace}}/build/Release/tmsexpress.exe" -DestinationPath "${{github.workspace}}/build-windows.zip"
+      # ⚠️ もしZIP化してないなら、リリースステップの直前にこういう圧縮処理を入れる必要があるよ！
+      - name: Archive Release
+        shell: pwsh
+        run: |
+          # 例: build/Release/ の中の成果物をZIPにまとめる場合
+          Compress-Archive -Path build/Release/* -DestinationPath build-windows.zip
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2  # Node24対応のv2に上げておくのがおすすめ！
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: build-windows.zip # 👈 上で作ったZIPを指定
 
       - name: Attach to Release
         uses: softprops/action-gh-release@v1
