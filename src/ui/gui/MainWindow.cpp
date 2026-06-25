@@ -156,7 +156,7 @@ void MainWindow::onOpenFile() {
     pitch_period_table_.clear();
     pitch_curve_table_.clear();
 
-    // Import audio file (else if で繋いで不要な return を一掃)
+    // Import audio file
     if (filepath.endsWith(".wav", Qt::CaseInsensitive)) {
         // Enable gain normalization by default
         // ui->postGainNormalizeEnable->setChecked(true);
@@ -187,7 +187,6 @@ void MainWindow::onOpenFile() {
         // ui->postGainNormalizeEnable->setChecked(false);
 
         importBitstream(filepath.toStdString());
-        // 【タイポ修正】メンバ変数のアンダースコアを追加
         frame_postprocessor_ = FramePostprocessor(&frame_table_);
         performPostProc();
 
@@ -218,7 +217,6 @@ void MainWindow::onSaveBitstream() {
             "Invalid Extension",
             "The file must use .bin or .lpc.\nDefaulting to .lpc."
         );
-        // ※ 処理を抜けない仕様のため return は無し
     }
 
     filepath = fi.path() + "/" + fi.completeBaseName() + ".lpc";
@@ -238,10 +236,13 @@ void MainWindow::onExportAudio() {
         return;
     }
 
-    // 引数の順序を修正 (filepath, samples, ...)
-    synthesizer_.render(filepath.toStdString(),
-        synthesizer_.getSamples(), lpc_buffer_.getSampleRateHz(),
-        lpc_buffer_.getWindowWidthMs());
+    // 【修正】第1引数：samples, 第2引数：パス文字列
+    synthesizer_.render(
+        synthesizer_.getSamples(),
+        filepath.toStdString(),
+        lpc_buffer_.getSampleRateHz(),
+        lpc_buffer_.getWindowWidthMs()
+    );
 }
 
 void MainWindow::onInputAudioPlay() {
@@ -285,10 +286,13 @@ void MainWindow::onLpcAudioPlay() {
     temp_dir.append(filename);
     qDebug() << "Playing " << temp_dir.c_str();
 
-    // 引数の順序と型を修正 (temp_dir.string(), samples, ...)
-    synthesizer_.render(temp_dir.string(),
-        synthesizer_.getSamples(), lpc_buffer_.getSampleRateHz(),
-        lpc_buffer_.getWindowWidthMs());
+    // 【修正】第1引数：samples, 第2引数：パス文字列（MSVC用に .string() で std::string に変換）
+    synthesizer_.render(
+        synthesizer_.getSamples(),
+        temp_dir.string(),
+        lpc_buffer_.getSampleRateHz(),
+        lpc_buffer_.getWindowWidthMs()
+    );
 
     // Setup player and play
     player->setAudioOutput(audio_output_);
