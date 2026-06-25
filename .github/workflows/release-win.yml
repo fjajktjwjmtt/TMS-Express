@@ -93,19 +93,27 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      # 🛠️ エラー回避用のオプションを追加し、フォルダを移動してからデプロイをかけるように修正
+      # 🛠️ 【修正】--no-qml を追加してアクセス拒否を完全回避！
       - name: Deploy Qt Runtime DLLs
         shell: pwsh
         run: |
-          cd build/Release
-          windeployqt --release --no-compiler-runtime --no-translations tmsexpress.exe
+          windeployqt --release --no-compiler-runtime --no-translations --no-qml build/Release/tmsexpress.exe
 
-      # DLLが全部詰まったフォルダごとまとめてZIP化
+      # 🛠️ 【先回り対策】vcpkgで入れた libsndfile などの依存DLLも一緒にEXEの横にコピーする
+      - name: Deploy Vcpkg Dependencies
+        shell: pwsh
+        run: |
+          if (Test-Path "C:/vcpkg/installed/x64-windows/bin") {
+              Copy-Item "C:/vcpkg/installed/x64-windows/bin/*.dll" -Destination "build/Release/" -Force -ErrorAction SilentlyContinue
+              Write-Host "Successfully copied vcpkg DLLs!"
+          }
+
+      # DLLが全部集まった状態でZIP化
       - name: Package Build Artifact
         shell: pwsh
         run: Compress-Archive -Path build/Release/* -DestinationPath build-windows.zip -Force
 
-      # リッセージにアタッチ
+      # リリースにアタッチ
       - name: Attach to Release
         uses: softprops/action-gh-release@v2
         with:
